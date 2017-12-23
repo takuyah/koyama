@@ -83,7 +83,7 @@ def lambda_handler(*args):
     message_text += u'\n\n[Reserved]\n'
     message_text += u'\n'.join([u'{}: {}'.format(date, ', '.join(times)) for (date, times) in sorted(all_reserved.iteritems())])
 
-    if os.environ['KOYAMA_PUSH_MODE'] == 'line':
+    if os.environ['KOYAMA_PUSH_MODE'] in ('line', 'both'):
         if all_available:
             message_text += u'\n\nhttp://{}/scripts/mtr1010.asp'.format(IP)
             url = 'https://api.line.me/v2/bot/message/push'
@@ -101,25 +101,29 @@ def lambda_handler(*args):
                 ]
             }
             r = requests.post(url, headers=headers, data=json.dumps(payload))
-            return r
+            print(r)
         else:
-            return 'None available.'
-    elif os.environ['KOYAMA_PUSH_MODE'] == 'pushbullet':
+            print('None available.')
+
+    if os.environ['KOYAMA_PUSH_MODE'] in ('pushbullet', 'both'):
         pb = Pushbullet(os.environ['PUSHBULLET_TOKEN'])
         if all_available:
-            # TODO: case most_recent = []
-            most_recent = [push for push in pb.get_pushes() if push['sender_name'] == 'Koyama Alert'][0]
+            pushes = pb.get_pushes()
+            most_recent = [push for push in pushes if push['sender_name'] == 'Koyama Alert']
+            if most_recent:
+                most_recent = most_recent[0]
+            else:
+                most_recent = {'body': None, 'iden': None}
             if most_recent['body'] != message_text:
                 pb.dismiss_push(most_recent['iden'])
                 channel = pb.get_channel('koyama')
                 push = channel.push_link('Koyama Alert', 'http://221.186.136.107/scripts/mtr1010.asp', message_text)
-            return push
+            print(push)
         else:
             undismissed = [push['iden'] for push in pb.get_pushes() if push['sender_name'] == 'Koyama Alert' and not push['dismissed']]
             for iden in undismissed:
                 pb.dismiss_push(iden)
-            return 'None available. Dismissed pushes.'
-    else:
+            print('None available. Dismissed pushes.')
         return None
 
 
