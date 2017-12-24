@@ -8,6 +8,11 @@ from bs4 import BeautifulSoup
 from pushbullet import Pushbullet
 
 
+def push_to_pushbullet(client, body):
+    channel = client.get_channel('koyama')
+    return channel.push_link('Koyama Alert', 'http://221.186.136.107/scripts/mtr1010.asp', body)
+
+
 def lambda_handler(*args):
     timetable = {
         '1': '08:40',
@@ -34,18 +39,20 @@ def lambda_handler(*args):
     }
 
     IP = school_ip[os.environ['KOYAMA_LOC']]
+    LOGIN_URL = 'http://{}/scripts/mtr0010.asp'.format(IP)
+    CALENDAR_URL = 'http://{}/scripts/mtr1010.asp'.format(IP)
 
     browser = mechanize.Browser()
-    browser.open('http://{}/scripts/mtr0010.asp'.format(IP))
+    browser.open(LOGIN_URL)
     browser.form = list(browser.forms())[0]
 
     un_control = browser.form.find_control('mt0010uid')
-    un_control.value  = os.environ['KOYAMA_ID']
+    un_control.value = os.environ['KOYAMA_ID']
     password_control = browser.form.find_control('mt0010pwd')
     password_control.value = os.environ['KOYAMA_PW']
 
     browser.submit()
-    browser.open('http://{}/scripts/mtr1010.asp'.format(IP))
+    browser.open(CALENDAR_URL)
 
     i = 0
     all_available = {}
@@ -53,8 +60,7 @@ def lambda_handler(*args):
     while True:
         soup = BeautifulSoup(browser.response().read(), 'html.parser', from_encoding='shift-jis')    # doesn't work with lxml/xml
         available = soup.find_all('input', src='/images/ko2_kusya.gif')
-        reserved = soup.find_all('input', src='/images/2.gif')
-        print('week {}: {} available, {} already reserved'.format(str(i), str(len(available)), str(len(reserved))))
+        print('week {}: {} available'.format(str(i), str(len(available))))
         for date in available:
             period = date.attrs['name'][1:]
             date_string = date.parent.parent.contents[1].text
@@ -62,13 +68,6 @@ def lambda_handler(*args):
                 all_available[date_string].append(timetable[period])
             except KeyError:
                 all_available[date_string] = [timetable[period]]
-        for date in reserved:
-            period = date.attrs['name'][1:]
-            date_string = date.parent.parent.contents[1].text
-            try:
-                all_reserved[date_string].append(timetable[period])
-            except KeyError:
-                all_reserved[date_string] = [timetable[period]]
         try:
             browser.form = browser.forms()[0]
             browser.submit('next')
@@ -77,19 +76,15 @@ def lambda_handler(*args):
             break
 
     print(all_available)
-    print(all_reserved)
-    message_text = u'[Available]\n'
-    message_text += u'\n'.join([u'{}: {}'.format(date, ', '.join(times)) for (date, times) in sorted(all_available.iteritems())])
-    message_text += u'\n\n[Reserved]\n'
-    message_text += u'\n'.join([u'{}: {}'.format(date, ', '.join(times)) for (date, times) in sorted(all_reserved.iteritems())])
+    message_text = u'\n'.join([u'{}: {}'.format(date, ', '.join(times)) for (date, times) in sorted(all_available.iteritems())])
 
     if os.environ['KOYAMA_PUSH_MODE'] in ('line', 'both'):
         if all_available:
-            message_text += u'\n\nhttp://{}/scripts/mtr1010.asp'.format(IP)
+            message_text += u'\n\n' + CALENDAR_URL
             url = 'https://api.line.me/v2/bot/message/push'
             headers = {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer {{{}}}'.format(os.environ['LINE_CHANNEL_TOKEN'])
+                'Authorization': 'Bearer {{{}}}'.format(os.environ['LINE_CHANNEL_TOKEN'])   # {{ → '{'
             }
             payload = {
                 'to': os.environ['LINE_MY_ID'],
@@ -109,22 +104,21 @@ def lambda_handler(*args):
         pb = Pushbullet(os.environ['PUSHBULLET_TOKEN'])
         if all_available:
             pushes = pb.get_pushes()
-            most_recent = [push for push in pushes if push['sender_name'] == 'Koyama Alert']
-            if most_recent:
-                most_recent = most_recent[0]
-            else:
-                most_recent = {'body': None, 'iden': None}
-            if most_recent['body'] != message_text:
-                pb.dismiss_push(most_recent['iden'])
-                channel = pb.get_channel('koyama')
-                push = channel.push_link('Koyama Alert', 'http://221.186.136.107/scripts/mtr1010.asp', message_text)
+            try:
+                most_recent = [push for push in pushes if push['sender_name'] == 'Koyama Alert'][0]
+                if most_recent['body'] != message_text:
+                    pb.dismiss_push(most_recent['iden'])
+                    push = push_to_pushbullet(pb, message_text)
+            except IndexError:
+                push = push_to_pushbullet(pb, message_text)
             print(push)
         else:
             undismissed = [push['iden'] for push in pb.get_pushes() if push['sender_name'] == 'Koyama Alert' and not push['dismissed']]
             for iden in undismissed:
                 pb.dismiss_push(iden)
             print('None available. Dismissed pushes.')
-        return None
+
+    return None
 
 
 if __name__ == '__main__':
