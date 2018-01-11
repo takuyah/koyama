@@ -54,10 +54,9 @@ def lambda_handler(*args):
     browser.submit()
     browser.open(CALENDAR_URL)
 
-    i = 0
     all_available = {}
     all_reserved = {}
-    while True:
+    for i in xrange(0, int(os.environ['MAX_WEEKS'])):
         soup = BeautifulSoup(browser.response().read(), 'html.parser', from_encoding='shift-jis')    # doesn't work with lxml/xml
         available = soup.find_all('input', src='/images/ko2_kusya.gif')
         print('week {}: {} available'.format(str(i), str(len(available))))
@@ -71,11 +70,10 @@ def lambda_handler(*args):
         try:
             browser.form = browser.forms()[0]
             browser.submit('next')
-            i += 1
         except:
             break
 
-    print(all_available)
+    print(sorted(all_available))
     message_text = u'\n'.join([u'{}: {}'.format(date, ', '.join(times)) for (date, times) in sorted(all_available.iteritems())])
 
     if os.environ['KOYAMA_PUSH_MODE'] in ('line', 'both'):

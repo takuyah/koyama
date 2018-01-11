@@ -21,6 +21,7 @@ $ pip2 install bs4 mechanize requests pushbullet.py
 ```sh
 $ export KOYAMA_PUSH_MODE="line"  # line/pushbullet/both
 $ export KOYAMA_LOC="shakujii"    # futakotamagawa/seijo/shakujii/akitsu/tsunashima
+$ export MAX_WEEKS="5"            # any positive integer
 $ export KOYAMA_ID="(your ID)"
 $ export KOYAMA_PW="(your password)"
 $ export LINE_MY_ID="(your LINE developer user ID)"
